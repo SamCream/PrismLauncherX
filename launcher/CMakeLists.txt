@@ -1463,26 +1463,20 @@ if (UNIX AND APPLE AND Launcher_ENABLE_UPDATER)
 endif()
 
 # Set basic compiler warning/error flags for all targets
-get_property(Launcher_TARGETS DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY BUILDSYSTEM_TARGETS)
-foreach(target ${Launcher_TARGETS})
-    message(STATUS "Enabling all warnings as errors for target '${target}'")
-    if (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-        target_compile_options(${target} PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
+foreach(target ${BUILDSYSTEM_TARGETS})
+    target_compile_options(${target} PRIVATE
+        $<IF:
+            $<STREQUAL:${CMAKE_CXX_COMPILER_FRONTEND_VARIANT},MSVC>,
+            /W4 /permissive-,
+            -Wall -Wextra -Wpendatic
+        >
+    )
 endforeach()
 
-# Disable some warnings in main launcher target due to being present in a lot of places. TODO: Fix them.
-if (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    target_compile_options(Launcher_logic PRIVATE /wd4100) # C4100 - unused parameter
-    target_compile_options(${Launcher_Name} PRIVATE /wd4100) # C4100 - unused parameter
-else()
-    # sfinae-incomplete is a new GCC warning and triggers in Qt headers
-    # no-unknown-warning-option so that compilers that don't have sfinae-incomplete don't error
-    target_compile_options(Launcher_logic PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wno-unknown-warning-option -Wno-sfinae-incomplete)
-    target_compile_options(${Launcher_Name} PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wno-unknown-warning-option -Wno-sfinae-incomplete)
-endif()
+set_target_properties(${BUILDSYSTEM_TARGETS} PROPERTIES
+    COMPILE_WARNING_AS_ERROR ${Launcher_WARNING_AS_ERROR}
+    LINK_WARNING_AS_ERROR ${Launcher_WARNING_AS_ERROR}
+)
 
 #### The bundle mess! ####
 # Bundle utilities are used to complete packages for different platforms - they add all the libraries that would otherwise be missing on the target system.
