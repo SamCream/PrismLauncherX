@@ -35,7 +35,9 @@ jobs:
             openjdk-17-jdk-headless openjdk-17-jre-headless
       - uses: actions/checkout@v4
       - name: Initialize the pinned NBT dependency
-        run: git submodule update --init libraries/libnbtplusplus
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git submodule update --init libraries/libnbtplusplus
       - name: Configure
         run: >-
           cmake -S . -B build -G Ninja
