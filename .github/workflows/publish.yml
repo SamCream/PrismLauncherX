@@ -9,6 +9,7 @@ permissions: {}
 jobs:
   winget:
     name: Winget
+    if: github.repository == 'PrismLauncher/PrismLauncher'
 
     permissions:
       contents: read

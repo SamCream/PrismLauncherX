@@ -29,6 +29,7 @@ permissions: {}
 jobs:
   build:
     name: Build (${{ matrix.artifact-name }})
+    timeout-minutes: 90
 
     environment: ${{ inputs.environment || '' }}
 
@@ -87,7 +88,11 @@ jobs:
 
     env:
       ARTIFACT_NAME: ${{ matrix.artifact-name }}-Qt6
-      BUILD_PLATFORM: official
+      BUILD_PLATFORM: community
+      QT_QPA_PLATFORM: offscreen
+      CMAKE_BUILD_PARALLEL_LEVEL: 3
+      VCPKG_MAX_CONCURRENCY: 3
+      MSA_CLIENT_ID: ${{ vars.MSA_CLIENT_ID }}
       BUILD_TYPE: ${{ inputs.build-type || 'Debug' }}
       CMAKE_PRESET: ${{ matrix.cmake-preset }}
 
@@ -119,7 +124,11 @@ jobs:
 
       - name: Configure project
         run: |
-          cmake --preset "$CMAKE_PRESET" -D VCPKG_HOST_TRIPLET="$VCPKG_TRIPLET" -D VCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
+          cmake --preset "$CMAKE_PRESET" -D CMAKE_AUTOGEN_PARALLEL=3 \
+            -D VCPKG_HOST_TRIPLET="$VCPKG_TRIPLET" -D VCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+            -D Launcher_MSA_CLIENT_ID="$MSA_CLIENT_ID" -D Launcher_CURSEFORGE_API_KEY= \
+            -D Launcher_IMGUR_CLIENT_ID= -D Launcher_UPDATER_GITHUB_REPO="https://github.com/$GITHUB_REPOSITORY" \
+            -D MACOSX_SPARKLE_UPDATE_PUBLIC_KEY= -D MACOSX_SPARKLE_UPDATE_FEED_URL=
 
       - name: Run build
         run: |
@@ -129,7 +138,7 @@ jobs:
         env:
           MSYS2_PATH_TYPE: inherit
         run: |
-          ctest --preset "$CMAKE_PRESET" --build-config "$BUILD_TYPE"
+          ctest --preset "$CMAKE_PRESET" --build-config "$BUILD_TYPE" --no-tests=error
 
       ##
       # PACKAGE

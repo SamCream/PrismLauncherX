@@ -1,112 +1,157 @@
-name: Build Application and Make Release
+name: Multi-platform packages and release
 
 on:
   push:
-    tags:
-      - "*"
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a Release after all platforms pass
+        type: boolean
+        default: false
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH tag pointing at this ref (required to publish)
+        type: string
+        default: ''
+      prerelease:
+        description: Mark a manual publication as a prerelease
+        type: boolean
+        default: false
 
-permissions: {}
+permissions:
+  contents: read
+
+concurrency:
+  group: multi-platform-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      publish: ${{ steps.plan.outputs.publish }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Test release assembly
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 .github/scripts/test-assemble-release.py
+      - id: plan
+        shell: bash
+        env:
+          REQUEST_PUBLISH: ${{ inputs.publish || false }}
+          REQUEST_TAG: ${{ inputs.tag }}
+          REQUEST_PRERELEASE: ${{ inputs.prerelease || false }}
+        run: |
+          set -euo pipefail
+          publish=false
+          prerelease=false
+          tag=''
+          version="snapshot-${GITHUB_SHA:0:12}"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            publish=true
+            tag="$GITHUB_REF_NAME"
+          elif [[ "$REQUEST_PUBLISH" == true ]]; then
+            publish=true
+            tag="$REQUEST_TAG"
+          fi
+          if [[ "$publish" == true ]]; then
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+              echo '::error::Publishing requires a version tag such as v12.0.0 or v12.0.0-beta.1'
+              exit 1
+            fi
+            if [[ "$(git rev-parse "refs/tags/$tag^{commit}")" != "$GITHUB_SHA" ]]; then
+              echo '::error::The release tag must point at the workflow commit'
+              exit 1
+            fi
+            version="$tag"
+            if [[ "$tag" == *-* || "$REQUEST_PRERELEASE" == true ]]; then
+              prerelease=true
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
   build_release:
-    name: Build Release
+    name: Build tested packages
+    needs: prepare
     uses: ./.github/workflows/build.yml
     permissions:
       contents: read
-      # Required for Azure Trusted Signing
       id-token: write
-      # Required for vcpkg binary cache
       packages: write
     with:
       build-type: Release
-      environment: Release
+      environment: ${{ needs.prepare.outputs.publish == 'true' && 'Release' || '' }}
     secrets: inherit
 
-  create_release:
-    needs: build_release
+  assemble:
+    needs: [prepare, build_release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          path: source
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: PrismLauncher-*
+          path: artifacts
+      - name: Assemble and verify every platform's release assets
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          python3 source/.github/scripts/assemble-release.py \
+            --artifacts artifacts --source source --output dist --version "$VERSION"
+          cd dist
+          sha256sum --check SHA256SUMS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-${{ needs.prepare.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, assemble]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    environment: Release
     permissions:
       contents: write
-    runs-on: ubuntu-slim
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          submodules: "true"
-          path: "PrismLauncher-source"
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-      - name: Grab and store version
+          name: release-assets-${{ needs.prepare.outputs.version }}
+          path: dist
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        shell: bash
         run: |
-          tag_name=$(echo ${{ github.ref }} | grep -oE "[^/]+$")
-          echo "VERSION=$tag_name" >> $GITHUB_ENV
-      - name: Package artifacts properly
-        run: |
-          mv ${{ github.workspace }}/PrismLauncher-source PrismLauncher-${{ env.VERSION }}
-          mv PrismLauncher-Linux-Qt6-Portable*/PrismLauncher-portable.tar.gz PrismLauncher-Linux-Qt6-Portable-${{ env.VERSION }}.tar.gz
-          mv PrismLauncher-Linux-aarch64-Qt6-Portable*/PrismLauncher-portable.tar.gz PrismLauncher-Linux-aarch64-Qt6-Portable-${{ env.VERSION }}.tar.gz
-          mv PrismLauncher-*.AppImage/PrismLauncher-*-x86_64.AppImage PrismLauncher-Linux-x86_64.AppImage
-          mv PrismLauncher-*.AppImage.zsync/PrismLauncher-*-x86_64.AppImage.zsync PrismLauncher-Linux-x86_64.AppImage.zsync
-          mv PrismLauncher-*.AppImage/PrismLauncher-*-aarch64.AppImage PrismLauncher-Linux-aarch64.AppImage
-          mv PrismLauncher-*.AppImage.zsync/PrismLauncher-*-aarch64.AppImage.zsync PrismLauncher-Linux-aarch64.AppImage.zsync
-          mv PrismLauncher-macOS*/PrismLauncher.zip PrismLauncher-macOS-${{ env.VERSION }}.zip
-          mv PrismLauncher-macOS*/PrismLauncher.dmg PrismLauncher-macOS-${{ env.VERSION }}.dmg
-
-          tar --exclude='.git' -czf PrismLauncher-${{ env.VERSION }}.tar.gz PrismLauncher-${{ env.VERSION }}
-
-          for d in PrismLauncher-Windows-MSVC*; do
-            cd "${d}" || continue
-            LEGACY="$(echo -n ${d} | grep -o Legacy || true)"
-            ARM64="$(echo -n ${d} | grep -o arm64 || true)"
-            INST="$(echo -n ${d} | grep -o Setup || true)"
-            PORT="$(echo -n ${d} | grep -o Portable || true)"
-            NAME="PrismLauncher-Windows-MSVC"
-            test -z "${LEGACY}" || NAME="${NAME}-Legacy"
-            test -z "${ARM64}" || NAME="${NAME}-arm64"
-            test -z "${PORT}" || NAME="${NAME}-Portable"
-            test -z "${INST}" || mv PrismLauncher-*.exe ../${NAME}-Setup-${{ env.VERSION }}.exe
-            test -n "${INST}" || zip -r -9 "../${NAME}-${{ env.VERSION }}.zip" *
-            cd ..
-          done
-
-          for d in PrismLauncher-Windows-MinGW-w64*; do
-            cd "${d}" || continue
-            INST="$(echo -n ${d} | grep -o Setup || true)"
-            PORT="$(echo -n ${d} | grep -o Portable || true)"
-            NAME="PrismLauncher-Windows-MinGW-w64"
-            test -z "${PORT}" || NAME="${NAME}-Portable"
-            test -z "${INST}" || mv PrismLauncher-*.exe ../${NAME}-Setup-${{ env.VERSION }}.exe
-            test -n "${INST}" || zip -r -9 "../${NAME}-${{ env.VERSION }}.zip" *
-            cd ..
-          done
-
-      - name: Create release
-        id: create_release
-        uses: softprops/action-gh-release@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ github.ref }}
-          name: Prism Launcher ${{ env.VERSION }}
-          draft: true
-          prerelease: false
-          fail_on_unmatched_files: true
-          files: |
-            PrismLauncher-Linux-x86_64.AppImage
-            PrismLauncher-Linux-x86_64.AppImage.zsync
-            PrismLauncher-Linux-aarch64.AppImage
-            PrismLauncher-Linux-aarch64.AppImage.zsync
-            PrismLauncher-Linux-Qt6-Portable-${{ env.VERSION }}.tar.gz
-            PrismLauncher-Linux-aarch64-Qt6-Portable-${{ env.VERSION }}.tar.gz
-            PrismLauncher-Windows-MinGW-w64-${{ env.VERSION }}.zip
-            PrismLauncher-Windows-MinGW-w64-Portable-${{ env.VERSION }}.zip
-            PrismLauncher-Windows-MinGW-w64-Setup-${{ env.VERSION }}.exe
-            PrismLauncher-Windows-MSVC-arm64-${{ env.VERSION }}.zip
-            PrismLauncher-Windows-MSVC-arm64-Portable-${{ env.VERSION }}.zip
-            PrismLauncher-Windows-MSVC-arm64-Setup-${{ env.VERSION }}.exe
-            PrismLauncher-Windows-MSVC-${{ env.VERSION }}.zip
-            PrismLauncher-Windows-MSVC-Portable-${{ env.VERSION }}.zip
-            PrismLauncher-Windows-MSVC-Setup-${{ env.VERSION }}.exe
-            PrismLauncher-macOS-${{ env.VERSION }}.zip
-            PrismLauncher-macOS-${{ env.VERSION }}.dmg
-            PrismLauncher-${{ env.VERSION }}.tar.gz
+          set -euo pipefail
+          cd dist
+          sha256sum --check SHA256SUMS.txt
+          if gh release view "$TAG" --json isDraft --jq .isDraft > ../release-state.txt 2>/dev/null; then
+            if [[ "$(cat ../release-state.txt)" != true ]]; then
+              echo '::error::Refusing to overwrite an already published release'
+              exit 1
+            fi
+          else
+            printf 'Built from commit %s.\n\nWorkflow: %s/%s/actions/runs/%s\n\nPackages are unsigned unless signing credentials are configured. See SHA256SUMS.txt for file checksums.\n' \
+              "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > ../release-notes.md
+            gh release create "$TAG" --verify-tag --draft --title "PrismLauncherX $TAG" --notes-file ../release-notes.md
+          fi
+          gh release upload "$TAG" ./* --clobber
+          # All packages have been uploaded successfully before making the release public.
+          gh release edit "$TAG" --draft=false --prerelease="$PRERELEASE" --latest="$([[ "$PRERELEASE" == true ]] && echo false || echo true)"

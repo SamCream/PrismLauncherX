@@ -63,3 +63,13 @@ ctest --test-dir <构建目录> --output-on-failure --no-tests=error
 真实 LittleSkin 账号登录及游戏中的皮肤渲染需要可访问站点的网络、用户账号和实际游戏环境。本地协议测试不等同于这些真实账号及游戏内验证。
 
 本次环境验证还读取了 LittleSkin 的真实 API 元数据，下载并校验了官方 authlib-injector 1.2.8，并以 Java 17 完成注入器初始化。云环境中的 JVM 需要显式使用平台提供的 HTTPS 代理路由；代理主机与端口可通过 Java 的 `https.proxyHost`、`https.proxyPort` 参数配置，不能假定 JVM 自动读取 `HTTPS_PROXY`。未关闭 TLS 校验。
+
+## 多平台 CI 与 Release
+
+每次分支推送会运行 Linux 验证及多平台 Release 配置构建。多平台目标包括 Linux x64/ARM64、Windows MSVC x64/ARM64、Windows MinGW 和 macOS 通用包。各目标先执行测试，再生成 AppImage、便携包、Windows 安装器和 macOS ZIP/DMG。全部成功后，工作流汇总 18 个发布文件（含源码包），附加 `SHA256SUMS.txt`，并上传 `release-assets-snapshot-<commit>` 工作流附件；普通分支推送不会公开创建 Release。
+
+正式发布：将代码合并或选定提交后，推送形如 `v12.0.0` 的版本标签。标签触发流程全部通过后，会上传全部文件并自动公开 Release。`v12.0.0-beta.1` 这类带后缀的标签自动标记为预发布，不替换最新稳定版。
+
+也可手动运行 **Multi-platform packages and release** 工作流：默认仅构建和上传附件；勾选 `publish` 后必须填写指向所选提交的现有版本标签。工作流拒绝标签与构建提交不一致的情况，以及覆盖已经公开的 Release。失败的发布可保留草稿，修复后重跑继续上传。
+
+发布只需要仓库提供的 `GITHUB_TOKEN`；可选 Windows/macOS/Linux 签名凭据沿用原有配置，不配置时会生成未签名或临时签名包。macOS 公证也需要独立配置。仓库可选变量 `MSA_CLIENT_ID` 用于自行注册的微软登录客户端；不会在发行包中使用上游项目的微软、CurseForge 或 Imgur 凭据，也不启用上游 Sparkle 更新源。此分支不会向上游 PrismLauncher 的 Winget 标识发布。

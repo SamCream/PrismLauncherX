@@ -34,6 +34,13 @@ runs:
   using: composite
 
   steps:
+    - name: Setup Java on Linux
+      if: ${{ runner.os == 'Linux' }}
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: 17
+
     - name: Setup Linux dependencies
       if: ${{ runner.os == 'Linux' }}
       uses: ./.github/actions/setup-dependencies/linux
