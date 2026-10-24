@@ -111,7 +111,7 @@ jobs:
 
       - name: Create vcpkg binary cache
         shell: bash
-        run: python -c 'import os; os.makedirs(os.environ["VCPKG_DEFAULT_BINARY_CACHE"], exist_ok=True)'
+        run: mkdir -p .vcpkg-binary-cache
 
       - name: Restore native dependency cache
         uses: actions/cache@v6.1.0
