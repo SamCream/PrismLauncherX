@@ -1,5 +1,5 @@
-#include "minecraft/auth/DownloadAuthlibInjector.h"
 #include "minecraft/GameDirectory.h"
+#include "minecraft/auth/DownloadAuthlibInjector.h"
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -37,10 +37,10 @@
  *      limitations under the License.
  */
 
-#include "MinecraftInstance.h"
 #include "Application.h"
 #include "BuildConfig.h"
 #include "Json.h"
+#include "MinecraftInstance.h"
 #include "QObjectPtr.h"
 #include "settings/Setting.h"
 #include "settings/SettingsObject.h"
@@ -187,8 +187,8 @@ void MinecraftInstance::loadSpecificSettings()
     if (isSpecificSettingsLoaded())
         return;
 
-    const bool legacyLayout = QDir(FS::PathCombine(instanceRoot(), "minecraft")).exists() ||
-                              QDir(FS::PathCombine(instanceRoot(), ".minecraft")).exists();
+    const bool legacyLayout =
+        QDir(FS::PathCombine(instanceRoot(), "minecraft")).exists() || QDir(FS::PathCombine(instanceRoot(), ".minecraft")).exists();
     m_settings->registerSetting("GameDirectoryMode", legacyLayout ? 4 : -1);
     m_settings->registerSetting("CustomGameDirectory", "");
 
@@ -381,8 +381,7 @@ QString MinecraftInstance::gameRoot() const
         mode = APPLICATION->settings()->get("GameDirectoryMode").toInt();
     const QString shared = APPLICATION->dataRoot();
     const bool modded = !m_components->getModLoadersList().isEmpty();
-    return GameDirectory::resolve(instanceRoot(), shared, mode, modded,
-                                  m_settings->get("CustomGameDirectory").toString());
+    return GameDirectory::resolve(instanceRoot(), shared, mode, modded, m_settings->get("CustomGameDirectory").toString());
 }
 
 QString MinecraftInstance::binRoot() const

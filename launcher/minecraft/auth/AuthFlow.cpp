@@ -1,7 +1,7 @@
-#include "minecraft/auth/steps/YggdrasilStep.h"
 #include <QDebug>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include "minecraft/auth/steps/YggdrasilStep.h"
 
 #include "minecraft/auth/AccountData.h"
 #include "minecraft/auth/steps/EntitlementsStep.h"

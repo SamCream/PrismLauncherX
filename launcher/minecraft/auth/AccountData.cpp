@@ -34,12 +34,12 @@
  *      limitations under the License.
  */
 
-#include "AccountData.h"
 #include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QUuid>
+#include "AccountData.h"
 
 namespace {
 void tokenToJSONV3(QJsonObject& parent, const Token& t, const char* tokenName)

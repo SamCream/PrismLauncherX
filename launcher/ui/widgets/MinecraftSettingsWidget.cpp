@@ -63,9 +63,8 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, QW
         m_ui->gameDirectoryMode->addItem(tr("保留旧实例目录"), 4);
     }
     m_ui->customGameDirectory->setVisible(m_instance != nullptr);
-    connect(m_ui->gameDirectoryMode, &QComboBox::currentIndexChanged, this, [this] {
-        m_ui->customGameDirectory->setEnabled(m_ui->gameDirectoryMode->currentData().toInt() == 3);
-    });
+    connect(m_ui->gameDirectoryMode, &QComboBox::currentIndexChanged, this,
+            [this] { m_ui->customGameDirectory->setEnabled(m_ui->gameDirectoryMode->currentData().toInt() == 3); });
 
     if (m_instance == nullptr) {
         m_ui->settingsTabs->removeTab(1);
@@ -351,8 +350,7 @@ void MinecraftSettingsWidget::loadSettings()
 
 bool MinecraftSettingsWidget::validateSettings() const
 {
-    if (m_instance && m_ui->gameDirectoryMode->currentData().toInt() == 3 &&
-        m_ui->customGameDirectory->text().trimmed().isEmpty()) {
+    if (m_instance && m_ui->gameDirectoryMode->currentData().toInt() == 3 && m_ui->customGameDirectory->text().trimmed().isEmpty()) {
         QMessageBox::warning(const_cast<MinecraftSettingsWidget*>(this), tr("游戏目录"), tr("选择自定义目录时，请输入游戏目录路径。"));
         return false;
     }

@@ -344,7 +344,8 @@ QVariant AccountList::data(const QModelIndex& index, int role) const
                         case AccountType::MSA: {
                             return tr("MSA", "Account type");
                         }
-                        case AccountType::Yggdrasil: return tr("皮肤站");
+                        case AccountType::Yggdrasil:
+                            return tr("皮肤站");
                         case AccountType::Offline: {
                             return tr("Offline", "Account type");
                         }

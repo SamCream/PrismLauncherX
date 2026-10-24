@@ -1,5 +1,5 @@
-#include "ui/dialogs/SkinSiteLoginDialog.h"
 #include <QDesktopServices>
+#include "ui/dialogs/SkinSiteLoginDialog.h"
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher

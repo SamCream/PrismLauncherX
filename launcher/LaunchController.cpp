@@ -35,8 +35,8 @@
  *      limitations under the License.
  */
 
-#include "LaunchController.h"
 #include "Application.h"
+#include "LaunchController.h"
 #include "launch/steps/PrintServers.h"
 #include "minecraft/auth/AccountData.h"
 #include "minecraft/auth/AccountList.h"
@@ -141,8 +141,8 @@ LaunchDecision LaunchController::decideLaunchMode()
         return LaunchDecision::Continue;
     }
 
-    MinecraftAccountPtr accountToCheck = (m_accountToUse->accountType() == AccountType::Yggdrasil || m_accountToUse->ownsMinecraft())
-                                            ? m_accountToUse : nullptr;
+    MinecraftAccountPtr accountToCheck =
+        (m_accountToUse->accountType() == AccountType::Yggdrasil || m_accountToUse->ownsMinecraft()) ? m_accountToUse : nullptr;
 
     if (!accountToCheck) {
         m_actualLaunchMode = LaunchMode::Demo;
@@ -337,8 +337,8 @@ bool LaunchController::reauthenticateAccount(const MinecraftAccountPtr& account,
         auto* accounts = APPLICATION->accounts();
         const bool isDefault = accounts->defaultAccount() == account;
         if (account->accountType() == AccountType::Yggdrasil) {
-            auto replacement = SkinSiteLoginDialog::newAccount(m_parentWidget, account->accountData()->authServer,
-                                                                 account->accountData()->authUsername);
+            auto replacement =
+                SkinSiteLoginDialog::newAccount(m_parentWidget, account->accountData()->authServer, account->accountData()->authUsername);
             if (!replacement)
                 return false;
             accounts->removeAccount(accounts->index(accounts->findAccountByProfileId(account->profileId())));

@@ -126,7 +126,8 @@ class MinecraftAccount : public QObject, public Usable {
             case AccountType::MSA: {
                 return "msa";
             } break;
-            case AccountType::Yggdrasil: return "mojang";
+            case AccountType::Yggdrasil:
+                return "mojang";
             case AccountType::Offline: {
                 return "offline";
             } break;

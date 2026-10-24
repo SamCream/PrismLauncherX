@@ -68,9 +68,8 @@ APIPage::APIPage(QWidget* parent) : QWidget(parent), ui(new Ui::APIPage)
     ui->downloadSource->addItem(tr("官方源"), "official");
     ui->downloadSource->addItem(tr("BMCLAPI"), "bmclapi");
     ui->downloadSource->addItem(tr("自定义镜像"), "custom");
-    connect(ui->downloadSource, &QComboBox::currentIndexChanged, this, [this] {
-        ui->downloadMirrorURL->setEnabled(ui->downloadSource->currentData() == "custom");
-    });
+    connect(ui->downloadSource, &QComboBox::currentIndexChanged, this,
+            [this] { ui->downloadMirrorURL->setEnabled(ui->downloadSource->currentData() == "custom"); });
 
     for (auto pasteType : comboBoxEntries) {
         ui->pasteTypeComboBox->addItem(PasteUpload::Type(pasteType).toString(), pasteType);
@@ -223,8 +222,7 @@ void APIPage::applySettings()
 
 bool APIPage::apply()
 {
-    if (ui->downloadSource->currentData() == "custom" &&
-        !Net::DownloadSource::validBase(QUrl(ui->downloadMirrorURL->text().trimmed()))) {
+    if (ui->downloadSource->currentData() == "custom" && !Net::DownloadSource::validBase(QUrl(ui->downloadMirrorURL->text().trimmed()))) {
         QMessageBox::warning(this, tr("下载源"), tr("请输入有效的 HTTPS 镜像地址，不要包含用户名、密码、查询参数或片段。"));
         return false;
     }

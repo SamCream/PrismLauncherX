@@ -65,15 +65,24 @@ on:
       # Workflows
       - ".github/workflows/nix.yml"
   workflow_dispatch:
+    inputs:
+      build-type:
+        description: Package configuration to validate
+        type: choice
+        options: [Debug, Release]
+        default: Debug
 
 permissions: {}
 
 env:
-  DEBUG: ${{ github.ref_type != 'tag' }}
+  DEBUG: ${{ github.ref_type != 'tag' && inputs.build-type != 'Release' }}
 
 jobs:
   build:
     name: Build (${{ matrix.system }})
+    env:
+      CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'prismlauncher' }}
+      CACHIX_CAN_PUSH: ${{ (github.repository == 'PrismLauncher/PrismLauncher' || vars.CACHIX_CACHE != '') && secrets.CACHIX_AUTH_TOKEN != '' }}
 
     permissions:
       contents: read
@@ -113,8 +122,9 @@ jobs:
         if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         uses: cachix/cachix-action@v17
         with:
-          name: prismlauncher
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          name: ${{ env.CACHIX_CACHE }}
+          authToken: ${{ env.CACHIX_CAN_PUSH == 'true' && secrets.CACHIX_AUTH_TOKEN || '' }}
+          skipPush: ${{ env.CACHIX_CAN_PUSH != 'true' }}
 
       - name: Run Flake checks
         run: |
@@ -129,10 +139,19 @@ jobs:
 
       - name: Build release package
         if: ${{ env.DEBUG == 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix build --no-link --print-build-logs --print-out-paths .#prismlauncher \
+            | tee release-store-paths.txt \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Pin release in the configured writable cache
+        if: ${{ env.DEBUG == 'false' && env.CACHIX_CAN_PUSH == 'true' && github.ref_type == 'tag' }}
+        shell: bash
         env:
           TAG: ${{ github.ref_name }}
           SYSTEM: ${{ matrix.system }}
         run: |
-          nix build --no-link --print-out-paths .#prismlauncher \
-            | tee -a "$GITHUB_STEP_SUMMARY" \
-            | xargs cachix pin prismlauncher "$TAG"-"$SYSTEM"
+          set -euo pipefail
+          xargs cachix pin "$CACHIX_CACHE" "$TAG-$SYSTEM" < release-store-paths.txt

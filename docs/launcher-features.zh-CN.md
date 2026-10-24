@@ -8,7 +8,7 @@
 
 在“设置 → 账号”选择“添加皮肤站 / LittleSkin”。默认 API 地址为：
 
-```
+```text
 https://littleskin.cn/api/yggdrasil/
 ```
 
@@ -20,7 +20,7 @@ https://littleskin.cn/api/yggdrasil/
 
 全新安装默认在启动器可执行文件旁的 `.minecraft` 保存数据：
 
-```
+```text
 启动器目录/
   prismlauncher
   .minecraft/
@@ -56,7 +56,7 @@ https://littleskin.cn/api/yggdrasil/
 
 构建后执行：
 
-```
+```bash
 ctest --test-dir <构建目录> --output-on-failure --no-tests=error
 ```
 
