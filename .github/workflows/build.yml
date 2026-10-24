@@ -92,6 +92,7 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       CMAKE_BUILD_PARALLEL_LEVEL: 3
       VCPKG_MAX_CONCURRENCY: 3
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-binary-cache
       MSA_CLIENT_ID: ${{ vars.MSA_CLIENT_ID }}
       BUILD_TYPE: ${{ inputs.build-type || 'Debug' }}
       CMAKE_PRESET: ${{ matrix.cmake-preset }}
@@ -107,6 +108,16 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: true
+
+      - name: Create vcpkg binary cache
+        shell: bash
+        run: python -c 'import os; os.makedirs(os.environ["VCPKG_DEFAULT_BINARY_CACHE"], exist_ok=True)'
+
+      - name: Restore native dependency cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: .vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ matrix.artifact-name }}-${{ hashFiles('vcpkg-configuration.json', 'vcpkg.json', 'cmake/vcpkg-triplets/**', 'cmake/vcpkg-ports/**') }}
 
       - name: Setup dependencies
         id: setup-dependencies
