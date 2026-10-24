@@ -1,3 +1,4 @@
+#include "net/DownloadSource.h"
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -64,6 +65,12 @@ APIPage::APIPage(QWidget* parent) : QWidget(parent), ui(new Ui::APIPage)
         QRegularExpression::anchoredPattern("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"));
 
     ui->setupUi(this);
+    ui->downloadSource->addItem(tr("官方源"), "official");
+    ui->downloadSource->addItem(tr("BMCLAPI"), "bmclapi");
+    ui->downloadSource->addItem(tr("自定义镜像"), "custom");
+    connect(ui->downloadSource, &QComboBox::currentIndexChanged, this, [this] {
+        ui->downloadMirrorURL->setEnabled(ui->downloadSource->currentData() == "custom");
+    });
 
     for (auto pasteType : comboBoxEntries) {
         ui->pasteTypeComboBox->addItem(PasteUpload::Type(pasteType).toString(), pasteType);
@@ -123,6 +130,11 @@ void APIPage::loadSettings()
 {
     auto* s = APPLICATION->settings();
 
+    ui->downloadSource->setCurrentIndex(qMax(0, ui->downloadSource->findData(s->get("DownloadSource"))));
+    ui->downloadMirrorURL->setText(s->get("DownloadMirrorURL").toString());
+    ui->downloadMirrorURL->setEnabled(ui->downloadSource->currentData() == "custom");
+    ui->downloadSourceFallback->setChecked(s->get("DownloadSourceFallback").toBool());
+
     int pasteType = s->get("PastebinType").toInt();
     QString pastebinURL = s->get("PastebinCustomAPIBase").toString();
 
@@ -161,6 +173,9 @@ void APIPage::applySettings()
 {
     auto* s = APPLICATION->settings();
 
+    s->set("DownloadSource", ui->downloadSource->currentData());
+    s->set("DownloadMirrorURL", ui->downloadMirrorURL->text().trimmed());
+    s->set("DownloadSourceFallback", ui->downloadSourceFallback->isChecked());
     s->set("PastebinType", ui->pasteTypeComboBox->currentData().toInt());
     s->set("PastebinCustomAPIBase", ui->baseURLEntry->text());
 
@@ -208,6 +223,11 @@ void APIPage::applySettings()
 
 bool APIPage::apply()
 {
+    if (ui->downloadSource->currentData() == "custom" &&
+        !Net::DownloadSource::validBase(QUrl(ui->downloadMirrorURL->text().trimmed()))) {
+        QMessageBox::warning(this, tr("下载源"), tr("请输入有效的 HTTPS 镜像地址，不要包含用户名、密码、查询参数或片段。"));
+        return false;
+    }
     applySettings();
     return true;
 }

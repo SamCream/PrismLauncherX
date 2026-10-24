@@ -1,3 +1,5 @@
+#include "minecraft/auth/DownloadAuthlibInjector.h"
+#include "minecraft/GameDirectory.h"
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -185,6 +187,11 @@ void MinecraftInstance::loadSpecificSettings()
     if (isSpecificSettingsLoaded())
         return;
 
+    const bool legacyLayout = QDir(FS::PathCombine(instanceRoot(), "minecraft")).exists() ||
+                              QDir(FS::PathCombine(instanceRoot(), ".minecraft")).exists();
+    m_settings->registerSetting("GameDirectoryMode", legacyLayout ? 4 : -1);
+    m_settings->registerSetting("CustomGameDirectory", "");
+
     // Java Settings
     auto locationOverride = m_settings->registerSetting("OverrideJavaLocation", false);
     auto argsOverride = m_settings->registerSetting("OverrideJavaArgs", false);
@@ -369,13 +376,13 @@ void MinecraftInstance::populateLaunchMenu(QMenu* menu)
 
 QString MinecraftInstance::gameRoot() const
 {
-    QFileInfo mcDir(FS::PathCombine(instanceRoot(), "minecraft"));
-    QFileInfo dotMCDir(FS::PathCombine(instanceRoot(), ".minecraft"));
-
-    if (dotMCDir.exists() && !mcDir.exists())
-        return dotMCDir.filePath();
-    else
-        return mcDir.filePath();
+    int mode = m_settings->get("GameDirectoryMode").toInt();
+    if (mode == -1)
+        mode = APPLICATION->settings()->get("GameDirectoryMode").toInt();
+    const QString shared = APPLICATION->dataRoot();
+    const bool modded = !m_components->getModLoadersList().isEmpty();
+    return GameDirectory::resolve(instanceRoot(), shared, mode, modded,
+                                  m_settings->get("CustomGameDirectory").toString());
 }
 
 QString MinecraftInstance::binRoot() const
@@ -1203,6 +1210,9 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
         auto mode = session->launchMode != LaunchMode::Offline ? Net::Mode::Online : Net::Mode::Offline;
         process->appendStep(makeShared<TaskStepWrapper>(pptr, makeShared<MinecraftLoadAndCheck>(this, mode)));
     }
+
+    if (!session->authServer.isEmpty())
+        process->appendStep(makeShared<TaskStepWrapper>(pptr, makeShared<DownloadAuthlibInjector>()));
 
     // check java
     {

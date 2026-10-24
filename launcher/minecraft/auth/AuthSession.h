@@ -17,6 +17,7 @@ struct AuthSession {
     QString session;
     // volatile auth token
     QString access_token;
+    QString authServer;
     // profile name
     QString player_name;
     // profile ID

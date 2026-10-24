@@ -1,3 +1,5 @@
+#include "ui/dialogs/SkinSiteLoginDialog.h"
+#include <QDesktopServices>
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -55,7 +57,7 @@ AccountListPage::AccountListPage(QWidget* parent) : QMainWindow(parent), ui(new 
     ui->setupUi(this);
     ui->listView->setEmptyString(
         tr("Welcome!\n"
-           "If you're new here, you can select the \"Add Microsoft\" button to link your Microsoft account."));
+           "Add a Microsoft account, or select \"Add Offline\" to create a local player profile."));
     ui->listView->setEmptyMode(VersionListView::String);
     ui->listView->setContextMenuPolicy(Qt::CustomContextMenu);
 
@@ -138,16 +140,18 @@ void AccountListPage::on_actionAddMicrosoft_triggered()
     }
 }
 
+void AccountListPage::on_actionAddSkinSite_triggered()
+{
+    const auto account = SkinSiteLoginDialog::newAccount(this);
+    if (account) {
+        m_accounts->addAccount(account);
+        if (m_accounts->count() == 1)
+            m_accounts->setDefaultAccount(account);
+    }
+}
+
 void AccountListPage::on_actionAddOffline_triggered()
 {
-    if (!m_accounts->anyAccountIsValid()) {
-        QMessageBox::warning(this, tr("Error"),
-                             tr("You must add a Microsoft account that owns Minecraft before you can add an offline account."
-                                "<br><br>"
-                                "If you have lost your account you can contact Microsoft for support."));
-        return;
-    }
-
     ChooseOfflineNameDialog dialog(tr("Please enter your desired username to add your offline account."), this);
     if (dialog.exec() != QDialog::Accepted) {
         return;
@@ -215,7 +219,8 @@ void AccountListPage::updateButtonStates()
         QModelIndex selected = selection.first();
         MinecraftAccountPtr account = selected.data(AccountList::PointerRole).value<MinecraftAccountPtr>();
         accountIsReady = !account->isActive();
-        accountIsOnline = account->accountType() != AccountType::Offline;
+        accountIsOnline = account->accountType() == AccountType::MSA;
+        ui->actionRefresh->setEnabled(accountIsReady && account->accountType() != AccountType::Offline);
 
         accountCanMoveUp = selected.row() > 0;
         int indexOfLast = m_accounts->count() - 1;
@@ -224,7 +229,8 @@ void AccountListPage::updateButtonStates()
     ui->actionRemove->setEnabled(accountIsReady);
     ui->actionSetDefault->setEnabled(accountIsReady);
     ui->actionManageSkins->setEnabled(accountIsReady && accountIsOnline);
-    ui->actionRefresh->setEnabled(accountIsReady && accountIsOnline);
+    if (!hasSelection)
+        ui->actionRefresh->setEnabled(false);
 
     if (m_accounts->defaultAccount().get() == nullptr) {
         ui->actionNoDefault->setEnabled(false);

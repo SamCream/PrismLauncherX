@@ -23,6 +23,13 @@
    <property name="bottomMargin">
     <number>0</number>
    </property>
+   <item><widget class="QGroupBox" name="gameDirectoryBox">
+    <property name="title"><string>游戏目录与版本隔离</string></property>
+    <layout class="QVBoxLayout" name="gameDirectoryLayout">
+     <item><widget class="QComboBox" name="gameDirectoryMode"/></item>
+     <item><widget class="QLineEdit" name="customGameDirectory"><property name="placeholderText"><string>自定义游戏目录（绝对路径或相对于版本目录）</string></property></widget></item>
+     <item><widget class="QLabel" name="gameDirectoryNote"><property name="text"><string>隔离 mods、配置、存档与资源包；库和资源缓存共享。切换目录不会移动已有文件。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+    </layout></widget></item>
    <item>
     <widget class="QCommandLinkButton" name="openGlobalSettingsButton">
      <property name="text">

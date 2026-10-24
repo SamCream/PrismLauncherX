@@ -1,3 +1,4 @@
+#include "ui/dialogs/SkinSiteLoginDialog.h"
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -96,8 +97,7 @@ void LaunchController::decideAccount()
     if (!accounts->anyAccountIsValid()) {
         // Tell the user they need to log in at least one account in order to play.
         auto reply = CustomMessageBox::selectable(m_parentWidget, tr("No Accounts"),
-                                                  tr("In order to play Minecraft, you must have at least one Microsoft "
-                                                     "account which owns Minecraft logged in. "
+                                                  tr("To play Minecraft, add a Microsoft account or an offline account. "
                                                      "Would you like to open the account manager to add an account now?"),
                                                   QMessageBox::Information, QMessageBox::Yes | QMessageBox::No)
                          ->exec();
@@ -135,21 +135,14 @@ LaunchDecision LaunchController::decideLaunchMode()
         return LaunchDecision::Continue;
     }
 
-    const auto* accounts = APPLICATION->accounts();
-    MinecraftAccountPtr accountToCheck = nullptr;
-
-    if (m_accountToUse->accountType() != AccountType::Offline) {
-        accountToCheck = m_accountToUse->ownsMinecraft() ? m_accountToUse : nullptr;
-    } else if (const auto defaultAccount = accounts->defaultAccount(); defaultAccount && defaultAccount->ownsMinecraft()) {
-        accountToCheck = defaultAccount;
-    } else {
-        for (int i = 0; i < accounts->count(); i++) {
-            if (const auto account = accounts->at(i); account->ownsMinecraft()) {
-                accountToCheck = account;
-                break;
-            }
-        }
+    if (m_accountToUse->accountType() == AccountType::Offline) {
+        // Offline identity does not imply offline downloads. Respect the requested network mode.
+        m_actualLaunchMode = m_wantedLaunchMode == LaunchMode::Offline ? LaunchMode::Offline : LaunchMode::Normal;
+        return LaunchDecision::Continue;
     }
+
+    MinecraftAccountPtr accountToCheck = (m_accountToUse->accountType() == AccountType::Yggdrasil || m_accountToUse->ownsMinecraft())
+                                            ? m_accountToUse : nullptr;
 
     if (!accountToCheck) {
         m_actualLaunchMode = LaunchMode::Demo;
@@ -343,6 +336,19 @@ bool LaunchController::reauthenticateAccount(const MinecraftAccountPtr& account,
     if (button == QMessageBox::StandardButton::Yes) {
         auto* accounts = APPLICATION->accounts();
         const bool isDefault = accounts->defaultAccount() == account;
+        if (account->accountType() == AccountType::Yggdrasil) {
+            auto replacement = SkinSiteLoginDialog::newAccount(m_parentWidget, account->accountData()->authServer,
+                                                                 account->accountData()->authUsername);
+            if (!replacement)
+                return false;
+            accounts->removeAccount(accounts->index(accounts->findAccountByProfileId(account->profileId())));
+            accounts->addAccount(replacement);
+            if (isDefault)
+                accounts->setDefaultAccount(replacement);
+            if (m_accountToUse == account)
+                m_accountToUse = replacement;
+            return true;
+        }
         if (account->accountType() == AccountType::MSA) {
             auto newAccount = MSALoginDialog::newAccount(m_parentWidget);
 

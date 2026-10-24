@@ -1,3 +1,4 @@
+#include <QMessageBox>
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -52,6 +53,19 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, QW
     : QWidget(parent), m_instance(instance), m_ui(new Ui::MinecraftSettingsWidget)
 {
     m_ui->setupUi(this);
+    if (m_instance)
+        m_ui->gameDirectoryMode->addItem(tr("跟随全局设置"), -1);
+    m_ui->gameDirectoryMode->addItem(tr("共享游戏目录"), 0);
+    m_ui->gameDirectoryMode->addItem(tr("所有版本隔离（推荐）"), 1);
+    m_ui->gameDirectoryMode->addItem(tr("仅模组版本隔离"), 2);
+    if (m_instance) {
+        m_ui->gameDirectoryMode->addItem(tr("自定义目录"), 3);
+        m_ui->gameDirectoryMode->addItem(tr("保留旧实例目录"), 4);
+    }
+    m_ui->customGameDirectory->setVisible(m_instance != nullptr);
+    connect(m_ui->gameDirectoryMode, &QComboBox::currentIndexChanged, this, [this] {
+        m_ui->customGameDirectory->setEnabled(m_ui->gameDirectoryMode->currentData().toInt() == 3);
+    });
 
     if (m_instance == nullptr) {
         m_ui->settingsTabs->removeTab(1);
@@ -170,6 +184,11 @@ void MinecraftSettingsWidget::loadSettings()
     } else {
         settings = APPLICATION->settings();
     }
+
+    const auto directoryIndex = m_ui->gameDirectoryMode->findData(settings->get("GameDirectoryMode").toInt());
+    m_ui->gameDirectoryMode->setCurrentIndex(directoryIndex < 0 ? m_ui->gameDirectoryMode->findData(1) : directoryIndex);
+    if (m_instance)
+        m_ui->customGameDirectory->setText(settings->get("CustomGameDirectory").toString());
 
     // Game Window
     m_ui->windowSizeGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideWindow").toBool() ||
@@ -330,6 +349,16 @@ void MinecraftSettingsWidget::loadSettings()
     m_ui->dataPacksPathEdit->blockSignals(false);
 }
 
+bool MinecraftSettingsWidget::validateSettings() const
+{
+    if (m_instance && m_ui->gameDirectoryMode->currentData().toInt() == 3 &&
+        m_ui->customGameDirectory->text().trimmed().isEmpty()) {
+        QMessageBox::warning(const_cast<MinecraftSettingsWidget*>(this), tr("游戏目录"), tr("选择自定义目录时，请输入游戏目录路径。"));
+        return false;
+    }
+    return true;
+}
+
 void MinecraftSettingsWidget::saveSettings()
 {
     SettingsObject* settings = nullptr;
@@ -339,6 +368,10 @@ void MinecraftSettingsWidget::saveSettings()
     } else {
         settings = APPLICATION->settings();
     }
+
+    settings->set("GameDirectoryMode", m_ui->gameDirectoryMode->currentData().toInt());
+    if (m_instance)
+        settings->set("CustomGameDirectory", m_ui->customGameDirectory->text().trimmed());
 
     // Console
     bool console = m_instance == nullptr || m_ui->consoleSettingsBox->isChecked();

@@ -1,3 +1,4 @@
+#include "minecraft/auth/Yggdrasil.h"
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -289,6 +290,12 @@ bool AccountData::resumeStateFromV3(QJsonObject data)
     auto typeS = typeV.toString();
     if (typeS == "MSA") {
         type = AccountType::MSA;
+    } else if (typeS == "Yggdrasil") {
+        type = AccountType::Yggdrasil;
+        authServer = data.value("auth-server").toString();
+        authUsername = data.value("auth-username").toString();
+        if (!Yggdrasil::validServer(QUrl(authServer)))
+            return false;
     } else if (typeS == "Offline") {
         type = AccountType::Offline;
     } else {
@@ -333,6 +340,10 @@ QJsonObject AccountData::saveState() const
         tokenToJSONV3(output, msaToken, "msa");
         tokenToJSONV3(output, userToken, "utoken");
         tokenToJSONV3(output, mojangservicesToken, "xrp-mc");
+    } else if (type == AccountType::Yggdrasil) {
+        output["type"] = "Yggdrasil";
+        output["auth-server"] = authServer;
+        output["auth-username"] = authUsername;
     } else if (type == AccountType::Offline) {
         output["type"] = "Offline";
     }

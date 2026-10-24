@@ -241,6 +241,7 @@ bool MinecraftAccount::shouldRefresh() const
 
 void MinecraftAccount::fillSession(AuthSessionPtr session)
 {
+    session->authServer = data.authServer;
     // volatile auth token
     session->access_token = data.accessToken();
     // profile name

@@ -344,6 +344,7 @@ QVariant AccountList::data(const QModelIndex& index, int role) const
                         case AccountType::MSA: {
                             return tr("MSA", "Account type");
                         }
+                        case AccountType::Yggdrasil: return tr("皮肤站");
                         case AccountType::Offline: {
                             return tr("Offline", "Account type");
                         }
@@ -389,7 +390,7 @@ QVariant AccountList::headerData(int section, [[maybe_unused]] Qt::Orientation o
                 case ProfileNameColumn:
                     return tr("Minecraft username associated with the account.");
                 case TypeColumn:
-                    return tr("Type of the account (MSA or Offline)");
+                    return tr("Type of the account (Microsoft, Offline, or Skin Site)");
                 case StatusColumn:
                     return tr("Current status of the account.");
                 default:
@@ -585,7 +586,7 @@ void AccountList::setListFilePath(QString path, bool autosave)
 bool AccountList::anyAccountIsValid()
 {
     for (auto account : m_accounts) {
-        if (account->ownsMinecraft()) {
+        if (account->ownsMinecraft() || (account->accountType() != AccountType::MSA && account->hasProfile())) {
             return true;
         }
     }

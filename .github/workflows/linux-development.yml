@@ -1,0 +1,59 @@
+name: Linux development checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-development-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    container: debian:13
+    timeout-minutes: 45
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      QT_QPA_PLATFORM: offscreen
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+    steps:
+      - name: Install native development dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates
+          echo 'deb https://deb.debian.org/debian bookworm main' > /etc/apt/sources.list.d/jdk17.list
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git build-essential cmake ninja-build pkg-config extra-cmake-modules scdoc \
+            qt6-base-dev qt6-base-dev-tools qt6-networkauth-dev libqt6svg6 qt6-qpa-plugins \
+            libarchive-dev libcmark-dev cmark libqrencode-dev libtomlplusplus-dev zlib1g-dev \
+            openjdk-17-jdk-headless openjdk-17-jre-headless
+      - uses: actions/checkout@v4
+      - name: Initialize the pinned NBT dependency
+        run: git submodule update --init libraries/libnbtplusplus
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DENABLE_LTO=OFF
+          -DCMAKE_AUTOGEN_PARALLEL=2 -DLauncher_BUILD_PLATFORM=development-ci
+          -DLauncher_MSA_CLIENT_ID= -DLauncher_CURSEFORGE_API_KEY=
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Run all tests
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+      - name: Check launcher startup
+        run: |
+          build/prismlauncher --version
+          build/prismlauncher --help
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-test-logs
+          path: build/Testing/Temporary/
+          if-no-files-found: ignore

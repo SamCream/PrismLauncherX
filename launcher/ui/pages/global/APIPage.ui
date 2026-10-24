@@ -38,6 +38,14 @@
        </rect>
       </property>
       <layout class="QVBoxLayout" name="verticalLayout">
+       <item><widget class="QGroupBox" name="downloadSourcesBox">
+        <property name="title"><string>游戏下载源</string></property>
+        <layout class="QVBoxLayout" name="downloadSourcesLayout">
+         <item><widget class="QComboBox" name="downloadSource"/></item>
+         <item><widget class="QLineEdit" name="downloadMirrorURL"><property name="placeholderText"><string>兼容 BMCLAPI 的 HTTPS 镜像地址</string></property></widget></item>
+         <item><widget class="QCheckBox" name="downloadSourceFallback"><property name="text"><string>镜像失败时回退至官方源</string></property></widget></item>
+         <item><widget class="QLabel" name="downloadSourcesNote"><property name="text"><string>适用于游戏版本、资源、运行库与 Forge/NeoForge 依赖；账号认证不经过下载镜像。文件校验始终启用。</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+        </layout></widget></item>
        <item>
         <widget class="QGroupBox" name="groupBox_paste">
          <property name="title">

@@ -46,6 +46,7 @@ enum class LaunchDecision { Undecided, Continue, Abort };
 
 class LaunchController : public Task {
     Q_OBJECT
+    friend class OfflineAccountTest;
    public:
     void executeTask() override;
 

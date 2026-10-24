@@ -411,6 +411,11 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             foo = QDir(FS::PathCombine(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), ".."));
         }
 
+        // Keep an existing installation's data location; fresh installs are portable.
+        const auto existingConfig = FS::PathCombine(foo.absolutePath(), BuildConfig.LAUNCHER_CONFIGFILE);
+        if (!QFile::exists(existingConfig)) {
+            foo = QDir(FS::PathCombine(binPath, ".minecraft"));
+        }
         dataPath = foo.absolutePath();
         adjustedBy = "Persistent data path";
 
@@ -699,7 +704,11 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         logModel->setOverflowMessage(tr("Cannot display this log since the log length surpassed %1 lines.").arg(logModel->getMaxLines()));
 
         // Folders
-        m_settings->registerSetting("InstanceDir", "instances");
+        m_settings->registerSetting("InstanceDir", QDir("instances").exists() ? "instances" : "versions");
+        m_settings->registerSetting("GameDirectoryMode", 1);
+        m_settings->registerSetting("DownloadSource", "official");
+        m_settings->registerSetting("DownloadMirrorURL", "https://bmclapi2.bangbang93.com");
+        m_settings->registerSetting("DownloadSourceFallback", true);
         m_settings->registerSetting("AdditionalInstanceDirs", QVariant(QStringList()));
         m_settings->registerSetting("LastUsedInstDirForNewInstance", "");
         m_settings->registerSetting({ "CentralModsDir", "ModsDir" }, "mods");
@@ -1269,7 +1278,8 @@ bool Application::createSetupWizard()
     bool pasteInterventionRequired = settings()->get("PastebinURL") != "";
     bool validWidgets = m_themeManager->isValidApplicationTheme(settings()->get("ApplicationTheme").toString());
     bool validIcons = m_themeManager->isValidIconTheme(settings()->get("IconTheme").toString());
-    bool login = !m_accounts->anyAccountIsValid() && (capabilities().testAnyFlags(Application::SupportsMSA));
+    // Accounts can be added later; an offline profile does not require Microsoft sign-in.
+    bool login = false;
     bool themeInterventionRequired = !validWidgets || !validIcons;
     bool wizardRequired = javaRequired || languageRequired || pasteInterventionRequired || themeInterventionRequired || askjava || login;
     if (wizardRequired) {

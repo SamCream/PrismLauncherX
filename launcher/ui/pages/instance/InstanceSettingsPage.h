@@ -55,6 +55,8 @@ class InstanceSettingsPage : public MinecraftSettingsWidget, public BasePage {
     QString id() const override { return "settings"; }
     bool apply() override
     {
+        if (!validateSettings())
+            return false;
         SettingsObject::Lock lock(m_instance->settings());
         saveSettings();
         return true;

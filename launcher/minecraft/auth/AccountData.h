@@ -36,6 +36,7 @@
 #pragma once
 #include <QByteArray>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QList>
 #include <QString>
 
@@ -88,7 +89,7 @@ struct MinecraftProfile {
     Validity validity = Validity::None;
 };
 
-enum class AccountType { MSA, Offline };
+enum class AccountType { MSA, Offline, Yggdrasil };
 
 enum class AccountState { Unchecked, Offline, Working, Online, Disabled, Errored, Expired, Gone };
 
@@ -106,6 +107,11 @@ struct AccountData {
 
     AccountType type = AccountType::MSA;
 
+    QString authServer;
+    QString authUsername;
+    // Runtime only: never serialized or logged.
+    QString authPassword;
+    QJsonArray availableProfiles;
     QString msaClientID;
     Token msaToken;
     Token userToken;

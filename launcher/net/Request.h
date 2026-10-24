@@ -135,6 +135,7 @@ class Request : public Task {
     auto abort() -> bool override;
     auto canAbort() const -> bool override { return true; }
 
+    void setDownloadSource(const QString& source, const QUrl& mirror, bool fallback);
     void setNetwork(QNetworkAccessManager* network) { m_network = network; }
     void addHeaderProxy(std::unique_ptr<Net::HeaderProxy> proxy) { m_headerProxies.push_back(std::move(proxy)); }
     void setSink(std::unique_ptr<Sink> sink) { m_sink = std::move(sink); }
@@ -187,6 +188,9 @@ class Request : public Task {
     QUrl m_url;
     std::vector<std::unique_ptr<Net::HeaderProxy>> m_headerProxies;
 
+    QUrl m_officialURL;
+    bool m_sourceSelected = false;
+    bool m_sourceFallback = false;
     int m_retryCount = 0;
     QTimer m_retryTimer;
 

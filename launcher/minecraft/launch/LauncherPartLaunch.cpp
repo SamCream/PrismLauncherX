@@ -1,3 +1,5 @@
+#include "java/JavaVersion.h"
+#include "minecraft/auth/DownloadAuthlibInjector.h"
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -93,6 +95,15 @@ void LauncherPartLaunch::executeTask()
 
     m_launchScript = instance->createLaunchScript(m_session, m_targetToJoin);
     QStringList args = instance->javaArguments();
+    if (!m_session->authServer.isEmpty()) {
+        const auto version = JavaVersion(instance->settings()->get("JavaVersion").toString());
+        if (version.major() > 0 && version.major() < 8) {
+            emitFailed(tr("皮肤站登录需要 Java 8 或以上版本来运行 authlib-injector，请更换此实例的 Java。"));
+            return;
+        }
+        args << QString("-javaagent:%1=%2").arg(DownloadAuthlibInjector::jarPath(), m_session->authServer);
+        args << "-Dauthlibinjector.side=client";
+    }
     QString allArgs = args.join(" ");
     emit logLine("Java arguments:\n  " + m_parent->censorPrivateInfo(allArgs) + "\n", MessageLevel::Launcher);
 

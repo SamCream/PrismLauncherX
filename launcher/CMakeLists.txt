@@ -219,6 +219,12 @@ set(MINECRAFT_SOURCES
     minecraft/auth/Parsers.cpp
     minecraft/auth/Parsers.h
 
+    minecraft/auth/steps/YggdrasilStep.cpp
+    minecraft/auth/steps/YggdrasilStep.h
+    minecraft/auth/DownloadAuthlibInjector.cpp
+    minecraft/auth/DownloadAuthlibInjector.h
+    ui/dialogs/SkinSiteLoginDialog.cpp
+    ui/dialogs/SkinSiteLoginDialog.h
     minecraft/auth/AuthFlow.cpp
     minecraft/auth/AuthFlow.h
 
