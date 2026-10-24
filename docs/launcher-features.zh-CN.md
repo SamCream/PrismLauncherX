@@ -68,7 +68,7 @@ ctest --test-dir <构建目录> --output-on-failure --no-tests=error
 
 每次分支推送会运行 Linux 验证及多平台 Release 配置构建。多平台目标包括 Linux x64/ARM64、Windows MSVC x64/ARM64、Windows MinGW 和 macOS 通用包。各目标先执行测试，再生成 AppImage、便携包、Windows 安装器和 macOS ZIP/DMG。全部成功后，工作流汇总 18 个发布文件（含源码包），附加 `SHA256SUMS.txt`，并上传 `release-assets-snapshot-<commit>` 工作流附件；普通分支推送不会公开创建 Release。
 
-正式发布：将代码合并或选定提交后，推送形如 `v12.0.0` 的版本标签。标签触发流程全部通过后，会上传全部文件并自动公开 Release。`v12.0.0-beta.1` 这类带后缀的标签自动标记为预发布，不替换最新稳定版。
+正式发布：将代码合并或选定提交后，推送形如 `v12.1.0` 的版本标签。标签触发流程全部通过后，会上传全部文件并自动公开 Release。`v12.1.0-beta.1` 这类带后缀的标签自动标记为预发布，不替换最新稳定版。
 
 也可手动运行 **Multi-platform packages and release** 工作流：默认仅构建和上传附件；勾选 `publish` 后必须填写指向所选提交的现有版本标签。工作流拒绝标签与构建提交不一致的情况，以及覆盖已经公开的 Release。失败的发布可保留草稿，修复后重跑继续上传。
 
