@@ -47,10 +47,12 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QUrl>
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <utility>
 #include <variant>
+#include "BuildConfig.h"
 
 #ifdef LAUNCHER_APPLICATION
 #include "Application.h"
@@ -58,8 +60,6 @@
 #include "net/ChecksumValidator.h"
 #include "net/MetaCacheSink.h"
 #include "settings/SettingsObject.h"
-#else
-#include "BuildConfig.h"
 #endif
 #include "net/ByteArraySink.h"
 #include "net/FileSink.h"
@@ -120,6 +120,8 @@ void Request::addValidator(Validator* v)
 
 void Request::executeTask()
 {
+    stopSegments();
+    m_segments.clear();
     setStatus(tr("Requesting %1").arg(StringUtils::truncateUrlHumanFriendly(m_url, 80)));
 
     if (m_network == nullptr) {
@@ -153,24 +155,27 @@ void Request::executeTask()
             return;
     }
 
-#ifdef LAUNCHER_APPLICATION
-    auto userAgent = APPLICATION->getUserAgent();
-#else
     auto userAgent = BuildConfig.USER_AGENT;
+#ifdef LAUNCHER_APPLICATION
+    if (auto* app = APPLICATION_DYN) {
+        userAgent = app->getUserAgent();
+    }
 #endif
     request.setHeader(QNetworkRequest::UserAgentHeader, userAgent.toUtf8());
     for (auto& headerProxy : m_headerProxies) {
         headerProxy->writeHeaders(request);
     }
 
-#ifdef LAUNCHER_APPLICATION
-    request.setTransferTimeout(APPLICATION->settings()->get("RequestTimeout").toInt() * 1000);
-#else
     request.setTransferTimeout();
+#ifdef LAUNCHER_APPLICATION
+    if (auto* app = APPLICATION_DYN) {
+        request.setTransferTimeout(app->settings()->get("RequestTimeout").toInt() * 1000);
+    }
 #endif
 
     m_lastProgressTime = std::chrono::steady_clock::now();
     m_lastProgressBytes = 0;
+    m_bodyStarted = false;
 
     auto* rep = getReply(request);
     if (rep == nullptr) {  // it failed
@@ -183,6 +188,186 @@ void Request::executeTask()
     connect(rep, &QNetworkReply::errorOccurred, this, &Request::downloadError);
     connect(rep, &QNetworkReply::sslErrors, this, &Request::sslErrors);
     connect(rep, &QNetworkReply::readyRead, this, &Request::downloadReadyRead);
+    connect(rep, &QNetworkReply::metaDataChanged, this, [this, request] { tryStartSegments(request); });
+}
+
+void Request::tryStartSegments(const QNetworkRequest& request)
+{
+    // Keep small files, API responses, compressed responses and conditional
+    // cache validation on the ordinary path. Network I/O is asynchronous: no
+    // blocking worker threads or cross-thread QNetworkAccessManager access.
+    if (m_segmentFallback || !m_segments.empty() || !isRunning() || m_httpMethod != HttpMethod::Get ||
+        dynamic_cast<FileSink*>(m_sink.get()) == nullptr || replyStatusCode() != 200 || request.hasRawHeader("Range") ||
+        request.hasRawHeader("If-None-Match") || request.hasRawHeader("If-Modified-Since") || m_bodyStarted ||
+        m_reply->hasRawHeader("Content-Encoding")) {
+        return;
+    }
+    const auto total = m_reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
+    if (total < 8 * 1024 * 1024 || m_reply->rawHeader("Accept-Ranges").toLower() != "bytes") {
+        return;
+    }
+    // A strong validator prevents splicing together different revisions.
+    const auto etag = m_reply->rawHeader("ETag");
+    if (etag.isEmpty() || etag.startsWith("W/")) {
+        return;
+    }
+    int count = 4;
+#ifdef LAUNCHER_APPLICATION
+    if (auto* app = APPLICATION_DYN) {
+        count = qBound(1, app->settings()->get("NumberOfConcurrentDownloads").toInt(), 4);
+    }
+#endif
+    if (count == 1) {
+        return;
+    }
+    m_segmentTotal = total;
+    m_segmentETag = etag;
+    for (int i = 0; i < count; ++i) {
+        auto segment = std::make_unique<Segment>();
+        segment->start = total / count * i + total % count * i / count;
+        segment->end = total / count * (i + 1) + total % count * (i + 1) / count - 1;
+        if (!segment->file.open()) {
+            m_segments.clear();
+            return;  // Temporary storage unavailable; continue the original GET.
+        }
+        m_segments.push_back(std::move(segment));
+    }
+
+    // Retain the original response metadata for cache finalization, but stop
+    // its body before starting the range requests.
+    disconnect(m_reply.get(), nullptr, this, nullptr);
+    m_reply->abort();
+    for (size_t i = 0; i < m_segments.size(); ++i) {
+        auto& segment = *m_segments[i];
+        QNetworkRequest rangeRequest(m_reply->url());
+        rangeRequest.setHeader(QNetworkRequest::UserAgentHeader, request.header(QNetworkRequest::UserAgentHeader));
+        rangeRequest.setTransferTimeout(request.transferTimeout());
+        // Re-evaluate host-specific credentials after redirects.
+        for (const auto& proxy : m_headerProxies) {
+            proxy->writeHeaders(rangeRequest);
+        }
+        rangeRequest.setRawHeader("Accept-Encoding", "identity");
+        rangeRequest.setRawHeader("Range",
+                                  QByteArray("bytes=") + QByteArray::number(segment.start) + '-' + QByteArray::number(segment.end));
+        rangeRequest.setRawHeader("If-Range", etag);
+        segment.reply.reset(m_network->get(rangeRequest));
+        segment.reply->setReadBufferSize(256 * 1024);
+        connect(segment.reply.get(), &QNetworkReply::readyRead, this, [this, i] { readSegment(i); });
+        connect(segment.reply.get(), &QNetworkReply::finished, this, [this, i] { finishSegment(i); });
+        connect(segment.reply.get(), &QNetworkReply::sslErrors, this, &Request::sslErrors);
+    }
+}
+
+void Request::stopSegments()
+{
+    for (auto& segment : m_segments) {
+        if (segment->reply) {
+            disconnect(segment->reply.get(), nullptr, this, nullptr);
+            if (!segment->reply->isFinished()) {
+                segment->reply->abort();
+            }
+        }
+    }
+}
+
+void Request::fallbackFromSegments()
+{
+    stopSegments();
+    m_segmentFallback = true;
+    // Defer deletion of replies until their signal handlers have returned.
+    QTimer::singleShot(0, this, [this] {
+        m_segments.clear();
+        if (isRunning()) {
+            m_sink->abort();
+            executeTask();
+        }
+    });
+}
+
+void Request::readSegment(size_t index)
+{
+    if (!isRunning() || m_segmentFallback) {
+        return;
+    }
+    auto& segment = *m_segments[index];
+    auto& reply = *segment.reply;
+    const auto expectedRange = QByteArray("bytes ") + QByteArray::number(segment.start) + '-' + QByteArray::number(segment.end) + '/' +
+                               QByteArray::number(m_segmentTotal);
+    if (reply.attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 206 || reply.rawHeader("Content-Range") != expectedRange ||
+        reply.rawHeader("ETag") != m_segmentETag || reply.hasRawHeader("Content-Encoding")) {
+        fallbackFromSegments();
+        return;
+    }
+    const auto data = reply.readAll();
+    if (segment.file.size() + data.size() > segment.end - segment.start + 1) {
+        fallbackFromSegments();
+        return;
+    }
+    if (segment.file.write(data) != data.size()) {
+        stopSegments();
+        m_sink->abort();
+        emitFailed(tr("Failed to write download segment: %1").arg(segment.file.errorString()));
+        return;
+    }
+    qint64 received = 0;
+    for (const auto& part : m_segments) {
+        received += part->file.size();
+    }
+    onProgress(received, m_segmentTotal);
+}
+
+void Request::finishSegment(size_t index)
+{
+    if (!isRunning() || m_segmentFallback) {
+        return;
+    }
+    auto& segment = *m_segments[index];
+    if (segment.reply->error() != QNetworkReply::NoError) {
+        fallbackFromSegments();
+        return;
+    }
+    readSegment(index);
+    if (!isRunning() || m_segmentFallback) {
+        return;
+    }
+    if (segment.file.size() != segment.end - segment.start + 1) {
+        fallbackFromSegments();
+        return;
+    }
+    segment.finished = true;
+    if (!std::all_of(m_segments.begin(), m_segments.end(), [](const auto& part) { return part->finished; })) {
+        return;
+    }
+    // Feed the assembled file through the existing validators and atomic save.
+    for (auto& part : m_segments) {
+        if (!part->file.seek(0)) {
+            fallbackFromSegments();
+            return;
+        }
+        while (!part->file.atEnd()) {
+            const auto data = part->file.read(256 * 1024);
+            if (data.isEmpty()) {
+                fallbackFromSegments();
+                return;
+            }
+            if (auto result = m_sink->write(data); !result) {
+                m_sink->abort();
+                emitFailed(result.error());
+                return;
+            }
+        }
+        part->file.remove();
+    }
+    if (auto result = m_sink->finalize(*m_reply); !result) {
+        m_sink->abort();
+        emitFailed(result.error());
+        return;
+    }
+    // Expose the successful range response through error()/replyStatusCode(),
+    // rather than the canceled original GET used for cache metadata above.
+    m_reply = std::move(m_segments.back()->reply);
+    disconnect(m_reply.get(), nullptr, this, nullptr);
+    emitSucceeded();
 }
 
 void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
@@ -422,6 +607,9 @@ void Request::downloadReadyRead()
 {
     if (m_state == State::Running) {
         auto data = m_reply->readAll();
+        // Once any body has reached the sink, switching to ranges would append
+        // it twice. This also guards against repeated metadata notifications.
+        m_bodyStarted = m_bodyStarted || !data.isEmpty();
         auto result = m_sink->write(data);
         if (replyStatusCode() >= 400) {
             m_errorResponse.append(data);
@@ -441,6 +629,13 @@ auto Request::abort() -> bool
 {
     m_retryTimer.stop();
     m_state = State::AbortedByUser;
+    if (!m_segments.empty()) {
+        stopSegments();
+        m_sink->abort();
+        emit aborted();
+        emit finished();
+        return true;
+    }
     if (m_reply && !m_reply->isFinished()) {
         disconnect(m_reply.get(), &QNetworkReply::errorOccurred, nullptr, nullptr);
         m_reply->abort();

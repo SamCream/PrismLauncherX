@@ -1,5 +1,6 @@
 #include "FlameModIndex.h"
 
+#include <QUrl>
 #include <algorithm>
 
 #include "FileSystem.h"
@@ -86,6 +87,15 @@ Result<ModPlatform::IndexedVersion> FlameMod::loadIndexedPackVersion(const QJson
     TRY_INTO(file.version, Json::requireString(obj, "displayName"))
     file.downloadUrl = obj["downloadUrl"].toString();
     TRY_INTO(file.fileName, Json::requireString(obj, "fileName"))
+    // CurseForge omits downloadUrl for some projects. Like HMCL and PCL-CE,
+    // resolve the file on the public CDN before sanitizing the local filename.
+    if (file.downloadUrl.isEmpty() && file.fileId.toLongLong() > 0 && !file.fileName.isEmpty()) {
+        const auto id = file.fileId.toLongLong();
+        file.downloadUrl = QString("https://edge.forgecdn.net/files/%1/%2/%3")
+                               .arg(id / 1000)
+                               .arg(id % 1000)
+                               .arg(QString::fromLatin1(QUrl::toPercentEncoding(file.fileName)));
+    }
     file.fileName = FS::RemoveInvalidPathChars(file.fileName);
 
     TRY_INTO(const auto& releaseType, Json::requireInteger(obj, "releaseType"))
