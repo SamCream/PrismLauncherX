@@ -40,6 +40,7 @@
 #pragma once
 
 #include <QNetworkReply>
+#include <QTemporaryFile>
 #include <QTimer>
 #include <QUrl>
 #include <array>
@@ -124,8 +125,9 @@ class Request : public Task {
      * The QByteArray will live as long as the Download object.
      */
     static auto makeByteArray(const QUrl& url, Options options = Option::NoOptions) -> std::pair<Request::Ptr, QByteArray*>;
-    static auto makeByteArray(const QUrl& url, QByteArray postData, Options options = Option::NoOptions)
-        -> std::pair<Request::Ptr, QByteArray*>;
+    static auto makeByteArray(const QUrl& url,
+                              QByteArray postData,
+                              Options options = Option::NoOptions) -> std::pair<Request::Ptr, QByteArray*>;
     static auto makeFile(const QUrl& url, const QString& path, Options options = Option::NoOptions) -> Request::Ptr;
     static auto makeCustomRequest(const Spec& spec) -> Request::Ptr;
 
@@ -152,6 +154,11 @@ class Request : public Task {
    private:
     auto handleRedirect() -> bool;
     void handleAutoRetry(int64_t delay);
+    void tryStartSegments(const QNetworkRequest& request);
+    void readSegment(size_t index);
+    void finishSegment(size_t index);
+    void stopSegments();
+    void fallbackFromSegments();
     virtual QNetworkReply* getReply(QNetworkRequest&);
 
    protected slots:
@@ -194,6 +201,19 @@ class Request : public Task {
 
     HttpMethod m_httpMethod = HttpMethod::Get;
     PostData m_postData;
+
+    struct Segment {
+        std::unique_ptr<QNetworkReply> reply;
+        QTemporaryFile file;
+        qint64 start = 0;
+        qint64 end = 0;
+        bool finished = false;
+    };
+    std::vector<std::unique_ptr<Segment>> m_segments;
+    qint64 m_segmentTotal = 0;
+    QByteArray m_segmentETag;
+    bool m_segmentFallback = false;
+    bool m_bodyStarted = false;
 };
 
 }  // namespace Net

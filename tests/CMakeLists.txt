@@ -22,6 +22,8 @@ set(TEST_SOURCES
     Index_test.cpp
     Version_test.cpp
     ModrinthUrl_test.cpp
+    FlameDownloadUrl_test.cpp
+    RequestDownload_test.cpp
     MetaComponentParse_test.cpp
     CatPack_test.cpp
     XmlLogs_test.cpp
