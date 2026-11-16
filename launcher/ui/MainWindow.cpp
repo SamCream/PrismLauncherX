@@ -237,7 +237,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
         ui->actionCheckUpdate->setVisible(APPLICATION->updaterEnabled());
 
-#ifndef Q_OS_MAC
+#ifndef Q_OS_MACOS
         ui->actionAddToPATH->setVisible(false);
 #endif
 
@@ -386,6 +386,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->accountsMenu->setStyleSheet("QMenu { menu-scrollable: 1; }");
 
     repopulateAccountsMenu();
+    connect(ui->actionNoDefaultAccount, &QAction::triggered, this, &MainWindow::changeActiveAccount);
 
     // Update the menu when the active account changes.
     // Shouldn't have to use lambdas here like this, but if I don't, the compiler throws a fit.
@@ -432,7 +433,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
 // macOS always has a native menu bar, so these fixes are not applicable
 // Other systems may or may not have a native menu bar (most do not - it seems like only Ubuntu Unity does)
-#ifndef Q_OS_MAC
+#ifndef Q_OS_MACOS
 void MainWindow::keyReleaseEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Alt && !APPLICATION->settings()->get("MenuBarInsteadOfToolBar").toBool())
@@ -575,6 +576,16 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
             auto* actionRenameGroup = new QAction(tr("&Rename group"), menu);
             connect(actionRenameGroup, &QAction::triggered, this, [this, group] { renameGroup(group); });
             actions.append(actionRenameGroup);
+
+            QAction* actionChangeGroupIcon = new QAction(tr("Change group &icon"), this);
+            connect(actionChangeGroupIcon, &QAction::triggered, this, [this, group] { setGroupIcon(group); });
+            actions.append(actionChangeGroupIcon);
+
+            if (!APPLICATION->instances()->getGroupIconKey(group).isEmpty()) {
+                QAction* actionRemoveGroupIcon = new QAction(tr("Delete &group icon"), this);
+                connect(actionRemoveGroupIcon, &QAction::triggered, this, [this, group] { removeGroupIcon(group); });
+                actions.append(actionRemoveGroupIcon);
+            }
         }
     }
     menu->addActions(actions);
@@ -601,31 +612,31 @@ void MainWindow::updateLaunchButton()
 
 void MainWindow::updateThemeMenu()
 {
-    QMenu* themeMenu = ui->actionChangeTheme->menu();
+    auto* themeMenu = ui->actionChangeTheme->menu();
 
     if (themeMenu) {
-        themeMenu->clear();
-    } else {
-        themeMenu = new QMenu(this);
+        themeMenu->deleteLater();
     }
+    themeMenu = new QMenu(this);
 
     auto themes = APPLICATION->themeManager()->getValidApplicationThemes();
 
-    QActionGroup* themesGroup = new QActionGroup(this);
-
+    auto currentThemeID = APPLICATION->settings()->get("ApplicationTheme").toString();
     for (auto* theme : themes) {
-        QAction* themeAction = themeMenu->addAction(theme->name());
+        auto* themeAction = new QAction(theme->name(), themeMenu);
 
         themeAction->setCheckable(true);
-        if (APPLICATION->settings()->get("ApplicationTheme").toString() == theme->id()) {
-            themeAction->setChecked(true);
-        }
-        themeAction->setActionGroup(themesGroup);
+        themeAction->setChecked(currentThemeID == theme->id());
+        themeAction->setData(theme->id());
 
-        connect(themeAction, &QAction::triggered, APPLICATION, [id = theme->id()]() {
+        connect(themeAction, &QAction::triggered, APPLICATION, [id = theme->id(), themeMenu]() {
             APPLICATION->themeManager()->setApplicationTheme(id);
             APPLICATION->settings()->set("ApplicationTheme", id);
+            for (auto* a : themeMenu->actions()) {
+                a->setChecked(a->data().toString() == id);
+            }
         });
+        themeMenu->addAction(themeAction);
     }
 
     ui->actionChangeTheme->setMenu(themeMenu);
@@ -638,19 +649,18 @@ void MainWindow::repopulateAccountsMenu()
     // NOTE: this is done so the accounts button text is not set to the accounts menu title
     QMenu* accountsButtonMenu = ui->actionAccountsButton->menu();
     if (accountsButtonMenu) {
-        accountsButtonMenu->clear();
-    } else {
-        accountsButtonMenu = new QMenu(this);
-        ui->actionAccountsButton->setMenu(accountsButtonMenu);
+        accountsButtonMenu->deleteLater();
     }
+    accountsButtonMenu = new QMenu(this);
+    ui->actionAccountsButton->setMenu(accountsButtonMenu);
 
-    auto accounts = APPLICATION->accounts();
-    MinecraftAccountPtr defaultAccount = accounts->defaultAccount();
+    auto* accounts = APPLICATION->accounts();
+    auto defaultAccount = accounts->defaultAccount();
 
     bool canChangeSkin = defaultAccount && (defaultAccount->accountType() == AccountType::MSA) && !defaultAccount->isActive();
     ui->actionManageSkins->setEnabled(canChangeSkin);
 
-    QString active_profileId = "";
+    QString activeProfileId = "";
     if (defaultAccount) {
         // this can be called before accountMenuButton exists
         if (ui->actionAccountsButton) {
@@ -659,7 +669,7 @@ void MainWindow::repopulateAccountsMenu()
         }
     }
 
-    QActionGroup* accountsGroup = new QActionGroup(this);
+    auto* accountsGroup = new QActionGroup(accountsButtonMenu);
 
     if (accounts->count() <= 0) {
         ui->actionNoAccountsAdded->setEnabled(false);
@@ -667,12 +677,11 @@ void MainWindow::repopulateAccountsMenu()
     } else {
         // TODO: Nicer way to iterate?
         for (int i = 0; i < accounts->count(); i++) {
-            MinecraftAccountPtr account = accounts->at(i);
+            auto account = accounts->at(i);
             auto profileLabel = profileInUseFilter(account->displayName(), account->isInUse());
-            QAction* action = new QAction(profileLabel, this);
+            auto* action = new QAction(profileLabel, accountsGroup);
             action->setData(i);
             action->setCheckable(true);
-            action->setActionGroup(accountsGroup);
             if (defaultAccount == account) {
                 action->setChecked(true);
             }
@@ -701,8 +710,6 @@ void MainWindow::repopulateAccountsMenu()
     ui->actionNoDefaultAccount->setActionGroup(accountsGroup);
 
     ui->accountsMenu->addAction(ui->actionNoDefaultAccount);
-
-    connect(ui->actionNoDefaultAccount, &QAction::triggered, this, &MainWindow::changeActiveAccount);
 
     ui->accountsMenu->addSeparator();
     ui->accountsMenu->addAction(ui->actionManageSkins);
@@ -1270,6 +1277,32 @@ void MainWindow::deleteGroup(QString group)
         APPLICATION->instances()->deleteGroup(group);
 }
 
+void MainWindow::setGroupIcon(QString group)
+{
+    Q_ASSERT(!group.isEmpty());
+
+    InstanceList* instances = APPLICATION->instances();
+
+    IconPickerDialog dlg(this);
+    dlg.execWithSelection(instances->getGroupIconKey(group));
+
+    if (dlg.result() == QDialog::Accepted) {
+        instances->setGroupIconKey(group, dlg.selectedIconKey);
+        view->updateGeometries();
+        view->viewport()->update();
+    }
+}
+
+void MainWindow::removeGroupIcon(QString group)
+{
+    Q_ASSERT(!group.isEmpty());
+
+    InstanceList* instances = APPLICATION->instances();
+    instances->setGroupIconKey(group, "");
+    view->updateGeometries();
+    view->viewport()->update();
+}
+
 void MainWindow::renameGroup(QString group)
 {
     Q_ASSERT(!group.isEmpty());
@@ -1350,6 +1383,11 @@ void MainWindow::on_actionViewJavaFolder_triggered()
     DesktopServices::openPath(APPLICATION->javaPath(), true);
 }
 
+void MainWindow::on_actionViewTemplateFolder_triggered()
+{
+    DesktopServices::openPath(APPLICATION->settings()->get("TemplateDir").toString(), true);
+}
+
 void MainWindow::refreshInstances()
 {
     APPLICATION->instances()->loadList();
@@ -1424,8 +1462,8 @@ void MainWindow::on_actionClearMetadata_triggered()
     // This if contains side effects!
     if (!APPLICATION->metacache()->evictAll()) {
         CustomMessageBox::selectable(this, tr("Error"),
-                                     tr("Metadata cache clear Failed!\nTo clear the metadata cache manually, press Folders -> View "
-                                        "Launcher Root Folder, and after closing the launcher delete the folder named \"meta\"\n"),
+                                     tr("Metadata cache clear Failed!\nTo clear the metadata cache manually, press Folders -> Launcher "
+                                        "Data, and after closing the launcher delete the folder named \"meta\"\n"),
                                      QMessageBox::Warning)
             ->show();
     }
@@ -1433,7 +1471,7 @@ void MainWindow::on_actionClearMetadata_triggered()
     APPLICATION->metacache()->SaveNow();
 }
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 void MainWindow::on_actionAddToPATH_triggered()
 {
     auto binaryPath = APPLICATION->applicationFilePath();

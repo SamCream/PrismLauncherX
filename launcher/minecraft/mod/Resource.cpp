@@ -36,7 +36,7 @@ std::tuple<QString, qint64> calculateFileSize(const QFileInfo& file)
         }
         return { QString("%1 %2").arg(QString::number(count), str), count };
     }
-    return { StringUtils::humanReadableFileSize(static_cast<double>(file.size()), true), file.size() };
+    return { StringUtils::humanReadableFileSize(static_cast<double>(file.size())), file.size() };
 }
 }  // namespace
 
@@ -234,12 +234,6 @@ int Resource::compare(const Resource& other, SortType type) const
             auto compareResult = QString::compare(provider(), other.provider(), Qt::CaseInsensitive);
             if (compareResult != 0) {
                 return compareResult;
-            }
-            break;
-        }
-        case SortType::LockUpdate: {
-            if (lockUpdate() != other.lockUpdate()) {
-                return lockUpdate() ? -1 : 1;
             }
             break;
         }

@@ -117,6 +117,7 @@ class MainWindow : public QMainWindow {
     void on_actionViewIconsFolder_triggered();
     void on_actionViewLogsFolder_triggered();
     void on_actionViewJavaFolder_triggered();
+    void on_actionViewTemplateFolder_triggered();
 
     void on_actionViewSkinsFolder_triggered();
 
@@ -136,7 +137,7 @@ class MainWindow : public QMainWindow {
 
     void on_actionClearMetadata_triggered();
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
     void on_actionAddToPATH_triggered();
 #endif
 
@@ -151,6 +152,9 @@ class MainWindow : public QMainWindow {
     void on_actionKillInstance_triggered();
 
     void on_actionDeleteInstance_triggered();
+
+    void setGroupIcon(QString group);
+    void removeGroupIcon(QString group);
 
     void deleteGroup(QString group);
     void renameGroup(QString group);
@@ -210,7 +214,7 @@ class MainWindow : public QMainWindow {
 
     void lockToolbars(bool);
 
-#ifndef Q_OS_MAC
+#ifndef Q_OS_MACOS
     void keyReleaseEvent(QKeyEvent* event) override;
 #endif
 
