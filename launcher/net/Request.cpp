@@ -211,13 +211,23 @@ void Request::tryStartSegments(const QNetworkRequest& request)
     if (etag.isEmpty() || etag.startsWith("W/")) {
         return;
     }
-    int count = 4;
+    int connectionBudget = 6;
 #ifdef LAUNCHER_APPLICATION
     if (auto* app = APPLICATION_DYN) {
-        count = qBound(1, app->settings()->get("NumberOfConcurrentDownloads").toInt(), 4);
+        connectionBudget = qBound(1, app->settings()->get("NumberOfConcurrentDownloads").toInt(), 6);
     }
 #endif
-    if (count == 1) {
+    // Batch mod downloads already run concurrently. Giving every file four
+    // more requests overwhelms the shared manager/host connection pool and
+    // throws away connections which have just finished their TLS handshake.
+    int activeReplies = 0;
+    for (auto* reply : m_network->findChildren<QNetworkReply*>()) {
+        if (!reply->isFinished()) {
+            ++activeReplies;
+        }
+    }
+    const int count = qBound(1, connectionBudget - activeReplies + 1, 4);
+    if (count < 2) {
         return;
     }
     m_segmentTotal = total;
@@ -293,8 +303,12 @@ void Request::readSegment(size_t index)
     auto& reply = *segment.reply;
     const auto expectedRange = QByteArray("bytes ") + QByteArray::number(segment.start) + '-' + QByteArray::number(segment.end) + '/' +
                                QByteArray::number(m_segmentTotal);
+    // If-Range requires a full 200 response when the representation changes.
+    // Tolerate an omitted response ETag for interoperability, while still
+    // rejecting explicit mismatches and validating the range and checksum.
+    const auto etag = reply.rawHeader("ETag");
     if (reply.attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 206 || reply.rawHeader("Content-Range") != expectedRange ||
-        reply.rawHeader("ETag") != m_segmentETag || reply.hasRawHeader("Content-Encoding")) {
+        (!etag.isEmpty() && etag != m_segmentETag) || reply.hasRawHeader("Content-Encoding")) {
         fallbackFromSegments();
         return;
     }
@@ -374,12 +388,24 @@ void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
 {
     auto now = std::chrono::steady_clock::now();
     auto elapsed = now - m_lastProgressTime;
+    const bool complete = bytesTotal >= 0 && bytesReceived >= bytesTotal;
+    // Range readyRead can fire for every network packet, unlike Qt's already
+    // throttled downloadProgress signal. Do not spend download time formatting
+    // strings and updating all nested task/progress widgets for every packet.
+    if (elapsed < std::chrono::milliseconds(100) && !complete) {
+        return;
+    }
+    if (bytesReceived == m_lastProgressBytes && bytesTotal == getTotalProgress()) {
+        return;
+    }
 
     // use milliseconds for speed precision
     auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
-    auto bytesReceivedSince = bytesReceived - m_lastProgressBytes;
-    auto dlSpeedBps = static_cast<double>(bytesReceivedSince) / static_cast<double>(elapsedMs.count()) * 1000;
-    auto remainingTimeS = static_cast<double>(bytesTotal - bytesReceived) / dlSpeedBps;
+    auto bytesReceivedSince = qMax(qint64(0), bytesReceived - m_lastProgressBytes);
+    auto dlSpeedBps = elapsedMs.count() > 0 ? static_cast<double>(bytesReceivedSince) / static_cast<double>(elapsedMs.count()) * 1000 : 0;
+    auto remainingTimeS = dlSpeedBps > 0 ? static_cast<double>(qMax(qint64(0), bytesTotal - bytesReceived)) / dlSpeedBps : 0;
+    m_lastProgressTime = now;
+    m_lastProgressBytes = bytesReceived;
 
     //: Current amount of bytes downloaded, out of the total amount of bytes in the download
     QString dlProgress = tr("%1 / %2")
@@ -388,7 +414,7 @@ void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
 
     QString dlSpeedStr;
     if (elapsedMs.count() > 0) {
-        auto strEta = bytesTotal > 0 ? Time::humanReadableDuration(remainingTimeS) : tr("unknown");
+        auto strEta = bytesTotal > 0 && (dlSpeedBps > 0 || complete) ? Time::humanReadableDuration(remainingTimeS) : tr("unknown");
         //: Download speed, in bytes per second (remaining download time in parenthesis)
         dlSpeedStr = tr("%1 /s (%2)").arg(StringUtils::humanReadableFileSize(dlSpeedBps)).arg(strEta);
     } else {

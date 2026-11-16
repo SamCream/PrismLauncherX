@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include <QElapsedTimer>
 #include <QFile>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
@@ -81,7 +82,7 @@ class DownloadServer : public QTcpServer {
         if (mode != "no-range") {
             headers += "Accept-Ranges: bytes\r\n";
         }
-        if (mode != "no-etag") {
+        if (mode != "no-etag" && !(range && mode == "range-no-etag")) {
             headers += QByteArray("ETag: ") +
                        (mode == "weak-etag"               ? "W/\"version1\""
                         : range && mode == "changed-etag" ? "\"version2\""
@@ -115,7 +116,7 @@ class RequestDownloadTest : public QObject {
     {
         QTest::addColumn<QString>("mode");
         for (const auto* mode : { "ranges", "small", "no-range", "no-etag", "weak-etag", "ignore", "bad-range", "changed-etag", "truncate",
-                                  "corrupt", "redirect" }) {
+                                  "corrupt", "redirect", "range-no-etag" }) {
             QTest::newRow(mode) << QString(mode);
         }
     }
@@ -139,6 +140,9 @@ class RequestDownloadTest : public QObject {
         request->addValidator(
             new Net::ChecksumValidator(QCryptographicHash::Sha256, QCryptographicHash::hash(server.data, QCryptographicHash::Sha256)));
         QSignalSpy finished(request.get(), &Task::finished);
+        QSignalSpy progress(request.get(), &Task::progress);
+        QElapsedTimer elapsed;
+        elapsed.start();
         request->start();
         QVERIFY(finished.wait(15000));
         QCOMPARE(finished.count(), 1);
@@ -158,6 +162,9 @@ class RequestDownloadTest : public QObject {
         }
         QVERIFY2(request->wasSuccessful(), qPrintable(request->failReason()));
         QCOMPARE(request->error(), QNetworkReply::NoError);
+        // Packet-sized writes must not each trigger nested UI/task updates.
+        QVERIFY2(progress.count() <= (elapsed.elapsed() + 99) / 100 + 4, "Unthrottled per-packet download progress");
+        QCOMPARE(request->getProgress(), qint64(server.data.size()));
         QFile file(path);
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(file.readAll(), server.data);
@@ -172,8 +179,42 @@ class RequestDownloadTest : public QObject {
                 QVERIFY(server.requestedRanges.contains(
                     QString("%1-%2").arg(server.data.size() * i / 4).arg(server.data.size() * (i + 1) / 4 - 1)));
             }
-            QCOMPARE(server.fullRequests, mode == "ranges" || mode == "redirect" ? 1 : 2);
+            QCOMPARE(server.fullRequests, mode == "ranges" || mode == "redirect" || mode == "range-no-etag" ? 1 : 2);
         }
+    }
+
+    void batchDownloadsKeepConnections()
+    {
+        DownloadServer server("ranges");
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QNetworkAccessManager network;
+        network.setProxy(QNetworkProxy::NoProxy);
+        QList<Net::Request::Ptr> requests;
+        const auto cleanup = qScopeGuard([&] {
+            requests.clear();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        });
+        int finished = 0;
+        for (int i = 0; i < 6; ++i) {
+            auto request = Net::Request::makeFile(server.url(), dir.filePath(QString::number(i)));
+            request->setNetwork(&network);
+            connect(request.get(), &Task::finished, this, [&] { ++finished; });
+            requests.append(request);
+            request->start();
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(finished, 6, 15000);
+        for (int i = 0; i < requests.size(); ++i) {
+            QVERIFY2(requests[i]->wasSuccessful(), qPrintable(requests[i]->failReason()));
+            QFile file(dir.filePath(QString::number(i)));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(file.readAll(), server.data);
+        }
+        // Six simultaneous mod downloads already use the host's connection
+        // budget. Do not cancel them and queue another 24 range requests.
+        QCOMPARE(server.fullRequests, 6);
+        QCOMPARE(server.ranges, 0);
     }
 
     void cancel()
