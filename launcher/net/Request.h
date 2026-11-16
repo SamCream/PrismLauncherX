@@ -125,9 +125,8 @@ class Request : public Task {
      * The QByteArray will live as long as the Download object.
      */
     static auto makeByteArray(const QUrl& url, Options options = Option::NoOptions) -> std::pair<Request::Ptr, QByteArray*>;
-    static auto makeByteArray(const QUrl& url,
-                              QByteArray postData,
-                              Options options = Option::NoOptions) -> std::pair<Request::Ptr, QByteArray*>;
+    static auto makeByteArray(const QUrl& url, QByteArray postData, Options options = Option::NoOptions)
+        -> std::pair<Request::Ptr, QByteArray*>;
     static auto makeFile(const QUrl& url, const QString& path, Options options = Option::NoOptions) -> Request::Ptr;
     static auto makeCustomRequest(const Spec& spec) -> Request::Ptr;
 
