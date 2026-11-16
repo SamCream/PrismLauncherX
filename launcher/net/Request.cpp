@@ -1,3 +1,4 @@
+#include "net/DownloadSource.h"
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -118,6 +119,19 @@ void Request::addValidator(Validator* v)
     m_sink->addValidator(v);
 }
 
+void Request::setDownloadSource(const QString& source, const QUrl& mirror, bool fallback)
+{
+    m_sourceSelected = true;
+    if (m_httpMethod != HttpMethod::Get)
+        return;
+    const auto original = m_url;
+    m_url = DownloadSource::rewrite(original, source, mirror);
+    if (m_url != original) {
+        m_officialURL = original;
+        m_sourceFallback = fallback;
+    }
+}
+
 void Request::executeTask()
 {
     stopSegments();
@@ -139,6 +153,14 @@ void Request::executeTask()
         return;
     }
 
+#ifdef LAUNCHER_APPLICATION
+    auto app = qobject_cast<Application*>(QCoreApplication::instance());
+    if (!m_sourceSelected && app) {
+        auto settings = app->settings();
+        setDownloadSource(settings->get("DownloadSource").toString(), QUrl(settings->get("DownloadMirrorURL").toString()),
+                          settings->get("DownloadSourceFallback").toBool());
+    }
+#endif
     QNetworkRequest request(m_url);
     auto result = m_sink->init(request);
     if (!result) {
@@ -569,6 +591,20 @@ void Request::downloadFinished()
 {
     // currently waiting for retry
     if (m_retryTimer.isActive()) {
+        return;
+    }
+
+    // Retry a failed mirror once at the original official URL, preserving validators.
+    if (m_state == State::Failed && m_sourceFallback && !m_officialURL.isEmpty() &&
+        m_reply->error() != QNetworkReply::OperationCanceledError) {
+        m_sink->abort();
+        m_url = m_officialURL;
+        m_sourceFallback = false;
+        m_errorResponse.clear();
+        m_redirectCount = 0;
+        m_retryCount = 0;
+        m_state = State::Running;
+        QTimer::singleShot(0, this, &Request::executeTask);
         return;
     }
 

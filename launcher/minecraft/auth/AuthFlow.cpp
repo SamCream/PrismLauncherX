@@ -1,6 +1,7 @@
 #include <QDebug>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include "minecraft/auth/steps/YggdrasilStep.h"
 
 #include "minecraft/auth/AccountData.h"
 #include "minecraft/auth/steps/EntitlementsStep.h"
@@ -37,6 +38,8 @@ AuthFlow::AuthFlow(AccountData* data, Action action) : Task(), m_data(data)
         m_steps.append(makeShared<MinecraftProfileStep>(m_data));
         m_steps.append(makeShared<GetSkinStep>(m_data));
     }
+    if (data->type == AccountType::Yggdrasil)
+        m_steps.append(makeShared<YggdrasilStep>(m_data, action == Action::Refresh));
     changeState(AccountTaskState::STATE_CREATED);
 }
 

@@ -39,7 +39,7 @@ in
 
 stdenv.mkDerivation {
   pname = "prismlauncher-unwrapped";
-  version = "12.0-unstable-${date}";
+  version = "12.1-unstable-${date}";
 
   src = lib.fileset.toSource {
     root = ../.;

@@ -53,14 +53,11 @@ void InstanceCopyTask::executeTask()
         if (m_useLinks || m_useHardLinks) {
             std::unique_ptr<FS::copy> savesCopy;
             if (m_copySaves) {
-                QFileInfo mcDir(FS::PathCombine(m_stagingPath, "minecraft"));
-                QFileInfo dotMCDir(FS::PathCombine(m_stagingPath, ".minecraft"));
-
-                QString staging_mc_dir;
-                if (dotMCDir.exists() && !mcDir.exists())
-                    staging_mc_dir = dotMCDir.filePath();
-                else
-                    staging_mc_dir = mcDir.filePath();
+                // Preserve both modern version-root and legacy nested game layouts.
+                auto relativeGameDir = QDir(m_origInstance->instanceRoot()).relativeFilePath(m_origInstance->gameRoot());
+                if (relativeGameDir.startsWith("..") || QDir::isAbsolutePath(relativeGameDir))
+                    relativeGameDir = ".";
+                const auto staging_mc_dir = QDir(m_stagingPath).filePath(relativeGameDir);
 
                 savesCopy = std::make_unique<FS::copy>(FS::PathCombine(m_origInstance->gameRoot(), "saves"),
                                                        FS::PathCombine(staging_mc_dir, "saves"));

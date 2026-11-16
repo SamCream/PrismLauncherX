@@ -54,6 +54,7 @@
    </attribute>
    <addaction name="actionAddMicrosoft"/>
    <addaction name="actionAddOffline"/>
+   <addaction name="actionAddSkinSite"/>
    <addaction name="actionRefresh"/>
    <addaction name="actionRemove"/>
    <addaction name="actionSetDefault"/>
@@ -89,6 +90,7 @@
     <string>&amp;Add Microsoft</string>
    </property>
   </action>
+  <action name="actionAddSkinSite"><property name="text"><string>添加皮肤站 / LittleSkin</string></property></action>
   <action name="actionAddOffline">
    <property name="text">
     <string>Add &amp;Offline</string>
