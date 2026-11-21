@@ -52,6 +52,14 @@ class DownloadServer : public QTcpServer {
 
     QUrl url() const { return QUrl(QString("http://127.0.0.1:%1/file").arg(serverPort())); }
 
+    void releaseBatchBodies()
+    {
+        for (auto* socket : findChildren<QTcpSocket*>()) {
+            socket->write(data);
+            socket->disconnectFromHost();
+        }
+    }
+
    private:
     void respond(QTcpSocket* socket, const QByteArray& request)
     {
@@ -100,6 +108,9 @@ class DownloadServer : public QTcpServer {
             body.chop(19);
         }
         socket->write(headers + "Connection: close\r\n\r\n");
+        if (mode == "batch") {
+            return;
+        }
         // Delay bodies so all range connections can be observed concurrently.
         QTimer::singleShot(mode == "cancel" ? 500 : 40, socket, [socket, body] {
             socket->write(body);
@@ -185,7 +196,7 @@ class RequestDownloadTest : public QObject {
 
     void batchDownloadsKeepConnections()
     {
-        DownloadServer server("ranges");
+        DownloadServer server("batch");
         QVERIFY(server.listen(QHostAddress::LocalHost));
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -204,6 +215,15 @@ class RequestDownloadTest : public QObject {
             requests.append(request);
             request->start();
         }
+        // Keep all six replies active until every response header has been
+        // processed. A timer alone can let early downloads finish before the
+        // later headers arrive, legitimately freeing slots for range requests.
+        for (const auto& request : requests) {
+            QTRY_COMPARE_WITH_TIMEOUT(request->replyStatusCode(), 200, 15000);
+        }
+        QCOMPARE(server.fullRequests, 6);
+        QCOMPARE(server.ranges, 0);
+        server.releaseBatchBodies();
         QTRY_COMPARE_WITH_TIMEOUT(finished, 6, 15000);
         for (int i = 0; i < requests.size(); ++i) {
             QVERIFY2(requests[i]->wasSuccessful(), qPrintable(requests[i]->failReason()));
