@@ -154,8 +154,7 @@ void Request::executeTask()
     }
 
 #ifdef LAUNCHER_APPLICATION
-    auto app = qobject_cast<Application*>(QCoreApplication::instance());
-    if (!m_sourceSelected && app) {
+    if (auto* app = qobject_cast<Application*>(QCoreApplication::instance()); !m_sourceSelected && app) {
         auto settings = app->settings();
         setDownloadSource(settings->get("DownloadSource").toString(), QUrl(settings->get("DownloadMirrorURL").toString()),
                           settings->get("DownloadSourceFallback").toBool());
